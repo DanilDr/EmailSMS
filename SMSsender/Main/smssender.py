@@ -9,7 +9,7 @@ import email
 import imaplib
 import sqlite3
 import datetime
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 from urllib.request import urlopen
 from time import strftime
 from email.header import decode_header
@@ -59,9 +59,7 @@ class CheckEmailSMS(object):
 #            self.M.logout()
 
     def __saveCheckMail(self, message_id):# Добавление информации и БД
-        curtime = datetime.datetime.now()
-        curtimestr = curtime.strftime("%Y-%m-%d %H:%M:%S")
-        self.sqlitecurs.execute("INSERT INTO checkmails (mail_id, date) VALUES ('{message_id}', '{curtimestr}')".format(message_id=message_id, curtimestr=curtimestr))
+        self.sqlitecurs.execute("INSERT INTO checkmails (mail_id, date) VALUES ('{message_id}', '{curtimestr}')".format(message_id=message_id, curtimestr=self.__getSQLTime()))
     
     def __checkMailDB(self, message_id):
         self.sqlitecurs.execute("SELECT * FROM checkmails WHERE mail_id='{message_id}'".format(message_id=message_id))
@@ -76,19 +74,32 @@ class CheckEmailSMS(object):
                                              emailtitle=self.__convertSubject(message_subject))
         recipients = self.config['recipients']['recipients'].split(',')
         for recipient in recipients:
-            self.__sendSMS(recipient, smsmessage)
+            self.__sendSMS(recipient, smsmessage, message_id)
         self.__saveCheckMail(message_id)
     
-    def __sendSMS(self, recipient, messagetext):
-        args = {"login" : "danil@nm.ru",
-                "psw" : "1q2w3e",
+    def __sendSMS(self, recipient, messagetext, message_id):
+        args = {"login" : self.config['smsc']['login'] ,
+                "psw" : self.config['smsc']['pwd'],
                 "phones" : recipient,
                 "mes" : messagetext,
                 "charset" : "utf-8"}
-        
         urlrequest = "http://smsc.ru/sys/send.php?%s" % (urlencode(args))
         cursms = urlopen(urlrequest)
-        #print (cursms.read())
+        self.__saveLog("smsc", message_id, recipient, cursms.read())
+    
+    def __saveLog(self, typemsg, message_id, recipient, message):
+        self.sqlitecurs.execute("INSERT INTO log (type, message_id, recipient, date, message) VALUES \
+        ('{type}', '{message_id}', '{recipient}', '{curtimestr}', '{message}')".format(
+        type=typemsg,
+        message_id=message_id,
+        recipient=recipient,
+        curtimestr=self.__getSQLTime(), 
+        message=message.decode('utf-8')))
+    
+    def __getSQLTime(self):
+        curtime = datetime.datetime.now()
+        curtimestr = curtime.strftime("%Y-%m-%d %H:%M:%S")
+        return curtimestr
     
     def __converDate(self, message_date):
         return strftime("%Y-%m-%d %H:%M:%S", parsedate(message_date))
